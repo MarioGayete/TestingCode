@@ -1,5 +1,5 @@
 """
-Heat conduction using FEniCS and tIGAr solver
+Heat conduction using FEniCS
 Equation to solve
       a(v,u) = <v,f> + <v,\overline{q}>|_{Gamma_b}
 
@@ -22,13 +22,8 @@ f --> source term
 from __future__ import print_function
 from fenics import *
 from mshr import *
+import numpy as np
 import matplotlib.pyplot as plt
-from tIGAr import *
-from tIGAr.NURBS import *
-from igakit.nurbs import NURBS as NURBS_ik
-from igakit.io import PetIGA
-from numpy import array
-import math
 
 # Constant parameters
 kappa = 1.0
@@ -36,19 +31,12 @@ Length = 1.0
 q_top = 0.0;
 q_bottom = 0.0;
 q_cyl = 0.0;
-u_left = 0;
-u_right = 1;
+u_left = 0.0;
+u_right = 0;
 f = Constant(0.0)
 
-# Number of levels of refinement with which to run the Poisson problem.
-# (Note: Paraview output files will correspond to the last/highest level
-# of refinement.)
-N_LEVELS = 3
-
-# Array to store error at different refinement levels:
-L2_errors = zeros(N_LEVELS)
-
-# Create classes for defining parts of the boundaries
+# Create classes for defining parts of the boundaries and the interior
+# of the domain
 class Left(SubDomain):
     def inside(self, x, on_boundary):
         return (on_boundary and near(x[0], 0.0))
@@ -101,11 +89,11 @@ cylinder.mark(boundary_markers, 5)
 ds = Measure('ds', domain=mesh, subdomain_data=boundary_markers)
 
 # Define each tipe of BC
-boundary_conditions = {1: {'Dirichlet': u_left},
-                       2: {'Dirichlet': u_right},
-                       3: {'Neumann':   q_bottom},
-                       4: {'Neumann':   q_top},
-                       5: {'Neumann':   q_cyl}}
+boundary_conditions = {1: {'Neumann': 10.0},
+                       2: {'Dirichlet': 1.0},
+                       3: {'Dirichelt':   0.0},
+                       4: {'Neumann':   0.0},
+                       5: {'Neumann':   0.0}}
 
 # Define trial and test functions
 u = TrialFunction(V)
