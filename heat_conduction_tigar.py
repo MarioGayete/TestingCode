@@ -12,9 +12,7 @@ Equation to solve
 Geometry --> a rectangle of 1 per 1 where the bottom right corner is rounded
       inversely by a quarter circle of radius 0.5
 
-Boundary conditions --> Left wall: Dirichlet u=0
-                        Right wall: Dirichlet u=1
-                        Top & Bottom & Cylinder: Neumann (fixed \overline{q}, may not be the same)
+Boundary conditions --> Walls --> fixed temperature u = 0
 
 kappa --> thermal conductivity
 f --> source term
@@ -23,126 +21,132 @@ from __future__ import print_function
 from fenics import *
 from mshr import *
 import math
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt_fig
 from tIGAr import *
 from tIGAr.NURBS import *
 from igakit.nurbs import NURBS as NURBS_ik
 from igakit.io import PetIGA
+from igakit.cad import *
+from igakit.plot import plt
 from numpy import array
+from numpy import linspace
+from numpy import pi
 
 # Constant parameters
 kappa = 1.0
 Length = 1.0
 Height = 1.0
-f = Constant(0.0)
-
-# Create classes for defining parts of the boundaries and the interior
-# of the domain
-class Left(SubDomain):
-    def inside(self, x, on_boundary):
-        return (on_boundary and near(x[0], 0.0))
-
-class Right(SubDomain):
-    def inside(self, x, on_boundary):
-        return (on_boundary and near(x[0], Length))
-
-class Bottom(SubDomain):
-    def inside(self, x, on_boundary):
-        return (on_boundary and near(x[1], 0.0))
-
-class Top(SubDomain):
-    def inside(self, x, on_boundary):
-        return (on_boundary and near(x[1], Height))
-
-class Cylinder(SubDomain):
-    def inside(self, x, on_boundary):
-        return (on_boundary and x[0]>=Length/2 and x[0]<=Length and x[1]>=0.0 and x[1]<=Height/2)
-
-# Create mesh
-"""
-channel = Rectangle(Point(0, 0), Point(Length, Length))
-cylinder = Circle(Point(Length, 0), Length/2)
-domain = channel - cylinder
-mesh = generate_mesh(domain, 50)
-"""
-# Geometry creation
-nx = 5 # number of horizontal points
-ny = nx # numer of vertical points
-cpArray = [[[0 for k in range(0,2)] for j in range(0,ny)] for i in range(0,nx)]
-Ax = Length/(nx-1)
-Ay = Height/(ny-1)
-cpArray[0][0][0] = -1.0;
-cpArray[0][0][1] = -1.0
-for i in range(0,nx):
-    for j in range(0,ny):
-        if i == 0:
-            cpArray[i][j][0] = -1.0
-        else:
-            cpArray[i][j][0] = cpArray[i-1][j][0] + Ax;
-        if j == 0:
-            cpArray[i][j][1] = -1.0
-        else:
-            cpArray[i][j][1] = cpArray[i][j-1][1] + Ay;
-
-# Open knot vectors for a one-Bezier-element bi-unit square.
-uKnots = [-1.0,-1.0,-1.0,1.0,1.0,1.0]
-vKnots = [-1.0,-1.0,-1.0,1.0,1.0,1.0]
-uKnots = []
-vKnots = []
-for i in range(0,nx):
-    if i ==0:
-        for n_rep in range(0,nx):
-            uKnots.append(-1)
-    elif i == nx-2:
-        for n_rep in range(0,nx):
-            uKnots.append(1)
-    else:
-        uKnots.append(-1 + 2/(nx-1) * i)
-
-for i in range(0,ny):
-    if i ==0:
-        for n_rep in range(0,ny):
-            vKnots.append(-1)
-    elif i == nx-2:
-        for n_rep in range(0,ny):
-            vKnots.append(1)
-    else:
-        vKnots.append(-1 + 2/(ny-1) * i)
-print(uKnots)
-# Refinement of the mesh
-N_LEVELS = 3
 
 ####### Geometry creation #######
+print("Generating the geometry...")
+c1 = circle(radius = Length/2., center = (Length,0), angle = (pi/2.,pi))
+left = line(p0 =(0, Height) , p1 =(0, 0))
+# right = line(p0 =(Length, Length/2.), p1 =(Length, Height))
+top = line(p0 =(Length, Height), p1 =(0, Height))
+# bottom = line(p0 =(0, 0), p1 =(Length/2., 0))
+
+perimeter_top = join(top,left,axis=0)
+
+srf = ruled(c1,perimeter_top)
+
+plt.plot(srf)
+plt_fig.savefig('savings/surface.png')
+
+# Refinement of the mesh
+print("Refining mesh...")
+N_LEVELS = 3
+
+# Finding the minimum and maximum value of the knots in both directions
+max_uKnots = max(srf.knots[0])
+min_uKnots = min(srf.knots[0])
+max_vKnots = max(srf.knots[1])
+min_vKnots = min(srf.knots[1])
 
 # Parameter determining level of refinement
 REF_LEVEL = N_LEVELS+3
 
-# Create initial mesh
-ikNURBS = NURBS_ik([uKnots,vKnots],cpArray)
-
 # Refinement
-numNewKnots = 1
-for i in range(0,REF_LEVEL):
-    numNewKnots *= 2
-h = 2.0/float(numNewKnots)
-numNewKnots -= 1
-knotList = []
-for i in range(0,numNewKnots):
-    knotList += [float(i+1)*h-1.0,]
-newKnots = array(knotList)
-print(knotList)
-ikNURBS.refine(0,newKnots)
-ikNURBS.refine(1,newKnots)
+to_insert_u = linspace(min_uKnots,max_uKnots,2**REF_LEVEL)[1:-1]
+to_insert_v = linspace(min_vKnots,max_vKnots,2**REF_LEVEL)[1:-1]
+srf.refine(0,to_insert_u)
+srf.refine(1,to_insert_v)
+
+plt.plot(srf)
+plt_fig.savefig('savings/refined_surface.png')
 
 # Output in PetIGA format
 if(mpirank==0):
-    PetIGA().write("out.dat",ikNURBS)
+    PetIGA().write("out.dat",srf)
 MPI.barrier(worldcomm)
 
 # Creating a control mesh from the NURBS
-splineMesh = NURBSControlMesh(ikNURBS,useRect=True)
+splineMesh = NURBSControlMesh(srf,useRect=True)
 
 # Create a spline generator for a spline with a single scalar field on the
 # given control mesh, where the scalar field is the same as the one used
 # to determine the mapping $\mathbf{F}:\widehat{\Omega}\to\Omega$.
 splineGenerator = EqualOrderSpline(1,splineMesh)
+
+# Set Dirichlet Boundary conditions (left temperature at 0 and right temperature at 1)
+field = 0
+scalarSpline = splineGenerator.getScalarSpline(field)
+for parametricDirection in [0,1]:
+    for side in [0,1]:
+        sideDofs = scalarSpline.getSideDofs(parametricDirection,side)
+        splineGenerator.addZeroDofs(field,sideDofs)
+
+
+#### ANALYSIS ####
+# Choose the quadrature degree to be used throughout the analysis.
+QUAD_DEG = 4
+
+# Create the extracted spline directly from the generator.
+# As of version 2019.1, this is required for using quad/hex elements in
+# parallel.
+spline = ExtractedSpline(splineGenerator,QUAD_DEG)
+
+# Trial and test Functions
+print("Generating the system...")
+u = spline.rationalize(TrialFunction(spline.V))
+v = spline.rationalize(TestFunction(spline.V))
+
+# Generate the internal heat sources vector
+x = spline.spatialCoordinates()
+soln = sin(pi*x[0])*sin(pi*x[1])
+f = -spline.div(spline.grad(soln))
+
+# Set up and solve the Heat conduction problem
+a = kappa*inner(spline.grad(u),spline.grad(v))*spline.dx
+L = inner(f,v)*spline.dx
+
+# Solve the system
+# FEniCS Function objects are always in the homogeneous representation; it
+# is a good idea to name variables in such a way as to recall this.
+print("Solving the system...")
+u_hom = Function(spline.V)
+spline.solveLinearVariationalProblem(a==L,u_hom)
+
+####### Postprocessing #######
+print("Saving data...")
+# The solution, u, is in the homogeneous representation.
+u_hom.rename("u","u")
+File("results/u.pvd") << u_hom
+
+# To visualize correctly in Paraview, we need the geometry information
+# as well.
+nsd = 3
+for i in range(0,nsd+1):
+    name = "F"+str(i)
+    spline.cpFuncs[i].rename(name,name)
+    File("results/"+name+"-file.pvd") << spline.cpFuncs[i]
+
+# Useful notes for plotting:
+#
+#  In Paraview, the data in these different files can be combined with the
+#  Append Attributes filter, then an appropriate vector field for the mesh
+#  warping and the weighted solution can be created using the Calculator
+#  filter.  E.g., in this case, the vector field to warp by would be
+#
+#   (F0/F3-coordsX)*iHat + (F1/F3-coordsY)*jHat + (F2/F3-coordsZ)*kHat
+#
+#  in Paraview Calculator syntax, and the solution would be u/F3.
